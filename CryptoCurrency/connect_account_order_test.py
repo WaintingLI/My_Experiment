@@ -5,19 +5,21 @@ import time
 from datetime import datetime
 import sys
 import os
+import threading
+from queue import Queue
+from queue import Empty
 import configparser
 import shutil
 import traceback
 import logging
 import requests
-from bs4 import BeautifulSoup
 import pandas as pd
 from pandas.core.frame import DataFrame
 import talib
 from binance.um_futures import UMFutures
 from binance.lib.utils import config_logging
 from binance.error import ClientError
-
+from alive_progress import alive_bar
 
 
 
@@ -37,7 +39,16 @@ cf.read_file(open('config.ini', 'r', encoding='UTF-8'))
 API_KEY = cf.get("Binance_Setting","API_KEY")
 SECRET_KEY = cf.get("Binance_Setting","SECRET_KEY")
 BASE_URL = cf.get("Binance_Setting","BASE_URL")
+SYMBOL = cf.get("Binance_Setting","SYMBOL")
 
+Virtual_timer = 0
+Virtual_interval = "1d"
+Virtual_flag = True
+
+#存放歷史資料
+History_KLine = pd.DataFrame()
+#設定交易對
+#SYMBOL = 'BTCUSDT'
 #ADMIN_EMAIL = cf.get("APP_Info","Admin_E-Mail")
 #獲取專案的名稱與設定
 #PROJECT_NAME = cf.get("Project","Project_Name")
@@ -83,8 +94,40 @@ Kline_column = [
     'Ignore'
 ]
 
-#設定交易對
-SYMBOL = 'BTCUSDT'
+
+class Progress_bar(threading.Thread):
+    """_summary_
+    用來顯示進度條
+    Args:
+        threading (_type_): 宣告種類
+    """
+    def __init__(self, queue:Queue, total_num:int):
+        """_summary_
+        宣告後立即會執行的東西
+        Args:
+            queue (Queue): 都進來的存列
+            total_num (int): 總資料筆數
+        """
+        threading.Thread.__init__(self)
+        self.queue = queue
+        self.total_num = total_num
+
+    def run(self):
+        count = 0
+        with alive_bar(self.total_num) as bar:
+            print("讀取資料中")
+            while True:
+                try:
+                    get_value = self.queue.get(timeout=10)
+                    bar(get_value)
+                    count += get_value
+                    if count >= self.total_num:
+                        break
+                except Empty:
+                    break
+
+
+
 
 #倒數十秒
 def count_down_ten_seconds() -> None:
@@ -141,9 +184,16 @@ def get_kline(symbol:str="BTCUSDT", interval:str="1d", limit:int = 500)->list:
     Returns:
         str: _description_
     """
+    global History_KLine
+    global Virtual_timer
+    global Virtual_flag
     if limit > 1500:
         print("由於當前 limit =",limit,"大於1500,將強制設定為1500")
         limit = 1500
+    if Virtual_flag:
+        temp_data = History_KLine.iloc[Virtual_timer:Virtual_timer+limit,:]
+        Virtual_timer += 1
+        return temp_data.values.tolist()
     try:
         res = um_futures_client.klines(symbol, interval, limit=limit)
         return res
@@ -170,16 +220,30 @@ def get_history_kline(symbol:str="BTCUSDT",
     Returns:
         DataFrame: 回傳dataframe資料格式
     """
+    data_queue = Queue()
+    TOTAL_DATA_NUM = int((finish_end_time - START_TIME) / ( time_sec.get(interval)*1000))
+    print("TOTAL_DATA_NUM =",TOTAL_DATA_NUM)
     END_TIME = START_TIME + time_sec.get(interval)*500*1000
     meta_dataframe = pd.DataFrame(UMFutures().klines(symbol, interval, startTime=START_TIME, endTime=END_TIME, limit=500), columns=Kline_column )
+    process_bar = Progress_bar(data_queue,TOTAL_DATA_NUM)
+    process_bar.start()
+    data_queue.put(500)
+    TOTAL_DATA_NUM -= 500
     START_TIME = END_TIME
     while finish_end_time > START_TIME:
         END_TIME = START_TIME + time_sec.get(interval)*500*1000
         meta_dataframe_2 = pd.DataFrame(UMFutures().klines(symbol, interval, startTime=START_TIME, endTime=END_TIME, limit=500), columns=Kline_column)
         meta_dataframe =pd.concat([meta_dataframe,meta_dataframe_2], ignore_index=True)
         START_TIME = END_TIME
-    meta_dataframe['Open_time'] = pd.to_datetime(meta_dataframe['Open_time'], unit='ms')
-    meta_dataframe['Close_time'] = pd.to_datetime(meta_dataframe['Close_time'], unit='ms')
+        if TOTAL_DATA_NUM < 500:
+            data_queue.put(TOTAL_DATA_NUM)
+        else:
+            data_queue.put(500)
+            TOTAL_DATA_NUM -= 500
+    process_bar.join()
+    #將日期轉換成人演可辨識的
+    #meta_dataframe['Open_time'] = pd.to_datetime(meta_dataframe['Open_time'], unit='ms')
+    #meta_dataframe['Close_time'] = pd.to_datetime(meta_dataframe['Close_time'], unit='ms')
     return meta_dataframe
 
 
@@ -209,6 +273,13 @@ def get_price(symbol:str="BTCUSDT")->float|None:
     Returns:
         float|None: 貨幣價格,如果輸入錯誤會回傳0
     """
+    global History_KLine
+    global Virtual_timer
+    global Virtual_flag
+    
+    if Virtual_flag:
+        price = History_KLine.loc[Virtual_timer,'Close']
+        return float(price)
     try:
         price = float(um_futures_client.ticker_price(symbol)["price"])
         return price
@@ -368,6 +439,18 @@ if __name__ == "__main__":
     KLine.to_csv(f"{tmp_date}.csv")
     sys.exit(0)
     '''
+    #啟動回測模擬
+    if Virtual_flag:
+        SET_START_TIME = cal_timestrip("2019-01-01 0:0:0.0")
+        print("SET_START_TIME=",datetime.fromtimestamp(float(SET_START_TIME/1000)))
+        FINISH_TIME = cal_timestrip(str(datetime.now()))
+        print("FINISH_TIME=",datetime.fromtimestamp(float(FINISH_TIME/1000)))
+        print(datetime.fromtimestamp(float(SET_START_TIME/1000)),"到",datetime.fromtimestamp(float(FINISH_TIME/1000)),"回測資料")
+        History_KLine = pd.DataFrame(get_history_kline(interval='1d',START_TIME=SET_START_TIME, finish_end_time=FINISH_TIME),columns=Kline_column)
+        print(History_KLine)
+        print("get_kline =",get_kline())
+        #print("History_KLine = ",History_KLine.values.tolist())
+    sys.exit(0)
     #=========================================================================================================================
     print("wallet =",get_balance('USDT'))
     
