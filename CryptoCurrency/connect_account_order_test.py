@@ -204,7 +204,6 @@ def get_kline(symbol:str="BTCUSDT", interval:str="1d", limit:int = 500)->list:
         if limit > Virtual_timer:
             Virtual_timer = limit
         temp_data = History_KLine.iloc[Virtual_timer - limit:Virtual_timer,:]
-        Virtual_timer += limit
         return temp_data.values.tolist()
     try:
         res = um_futures_client.klines(symbol, interval, limit=limit)
@@ -318,6 +317,7 @@ def new_order(order_symbol:str, order_side:str, order_quantity:float) -> int:
             return 0
         Virtual_total_funding = Virtual_total_funding - temp_fee - margin
         print("價格=",int(float(History_KLine.loc[Virtual_timer,'Close'])))
+        print("方向 = ",order_side)
         print("Virtual_total_funding =",Virtual_total_funding,"; 數量=",order_quantity,"; 開倉手續費=",temp_fee,"; 保證金 = ",margin)
         Virtual_position_display(order_quantity,margin,order_side)
         return 123
@@ -486,6 +486,7 @@ def Virtual_position_display(trade_num:float=0.0, money:float=0.0,flow:str='') -
         temp_fee_cal = float(History_KLine.loc[Virtual_timer,'Close']) * Virtual_position_trade_num * 0.0005
         #保證金不夠時,強制平倉
         if Virtual_position > (Virtual_position_margin-temp_fee_cal):
+            print("強制平倉")
             Virtual_position_falg = False
             Virtual_position = 0.0
             Virtual_position_way = ""
@@ -559,10 +560,14 @@ class Auto_virtual_position_cal(threading.Thread):
         global Virtual_timer
         global Virtual_position_falg
         old_timer = Virtual_timer
+        count = 1
         
         while True:
             if Virtual_timer != old_timer:
                 old_timer = Virtual_timer
+                print("count =",count)
+                print("Virtual_timer =",Virtual_timer)
+                count = count + 1
                 if Virtual_position_falg:
                     Virtual_position_display()
     
@@ -595,7 +600,7 @@ if __name__ == "__main__":
         print("FINISH_TIME=",datetime.fromtimestamp(float(FINISH_TIME/1000)))
         print(datetime.fromtimestamp(float(SET_START_TIME/1000)),"到",datetime.fromtimestamp(float(FINISH_TIME/1000)),"回測資料")
         History_KLine = pd.DataFrame(get_history_kline(interval='8h',START_TIME=SET_START_TIME, finish_end_time=FINISH_TIME),columns=Kline_column)
-        #print(History_KLine)
+        print(History_KLine)
         #print("get_kline =",get_kline())
         #print("History_KLine = ",History_KLine.values.tolist())
         auto_virtual_position_function = Auto_virtual_position_cal()
