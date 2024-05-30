@@ -40,10 +40,16 @@ API_KEY = cf.get("Binance_Setting","API_KEY")
 SECRET_KEY = cf.get("Binance_Setting","SECRET_KEY")
 BASE_URL = cf.get("Binance_Setting","BASE_URL")
 SYMBOL = cf.get("Binance_Setting","SYMBOL")
-
+#是否要開啟回測
+#Virtual_flag = True
+Virtual_flag = cf.getboolean("Simulation_back_test","Virtual_flag")
+#Virtual_interval = "8h"
+Virtual_interval = cf.get("Simulation_back_test","Virtual_interval")
+#Virtual_total_funding = 0.0
+Virtual_total_funding = cf.getfloat("Simulation_back_test","Virtual_total_funding")
 Virtual_timer = 0
-Virtual_interval = "1d"
-Virtual_flag = True
+
+
 
 #存放歷史資料
 History_KLine = pd.DataFrame()
@@ -64,11 +70,12 @@ Virtual_position_margin = 0.0
 Virtual_position_open_price = 0.0
 Virtual_position_trade_num = 0.0
 
-Virtual_total_funding = 0.0
 
 
 
-
+#設定loging訊息
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 um_futures_client = UMFutures(
     key=API_KEY,
@@ -161,6 +168,10 @@ def get_balance(symbol:str = 'USDT') -> str|None:
     Returns:
         str: 回傳資金餘額
     """
+    global Virtual_flag
+    global Virtual_total_funding
+    if Virtual_flag:
+        return Virtual_total_funding
     while True:
         try:
             response = um_futures_client.balance(recvWindow=4000)
@@ -322,7 +333,7 @@ def new_order(order_symbol:str, order_side:str, order_quantity:float) -> int:
         #計算開倉手續費
         temp_fee = int(float(History_KLine.loc[Virtual_timer,'Close']))*order_quantity*0.005
         margin = int(float(History_KLine.loc[Virtual_timer,'Close']))*order_quantity/20
-        if Virtual_total_funding < (temp_fee + margin):
+        if Virtual_total_funding < (temp_fee + margin) or order_quantity <=0:
             History_KLine_Export.loc[Virtual_timer,'Position_Status'] = "開倉失敗"
             History_KLine_Export.loc[Virtual_timer,'Total_Funding'] = Virtual_total_funding
             History_KLine_Export.loc[Virtual_timer,'Trade_Number'] = order_quantity
@@ -496,6 +507,7 @@ def Virtual_position_display(trade_num:float=0.0, money:float=0.0,flow:str='') -
     global Virtual_timer
     global History_KLine_Export
     
+    print("Virtual_timer =",Virtual_timer,";Virtual_position_falg =",Virtual_position_falg,"; flow=",flow)
     if Virtual_position_falg and flow == '':
         Virtual_position = \
         (int(float(History_KLine.loc[Virtual_timer,'Close']))-Virtual_position_open_price)*Virtual_position_trade_num
@@ -658,7 +670,7 @@ if __name__ == "__main__":
         FINISH_TIME = cal_timestrip(str(datetime.now()))
         print("FINISH_TIME=",datetime.fromtimestamp(float(FINISH_TIME/1000)))
         print(datetime.fromtimestamp(float(SET_START_TIME/1000)),"到",datetime.fromtimestamp(float(FINISH_TIME/1000)),"回測資料")
-        History_KLine = pd.DataFrame(get_history_kline(interval='8h',START_TIME=SET_START_TIME, finish_end_time=FINISH_TIME),columns=Kline_column)
+        History_KLine = pd.DataFrame(get_history_kline(interval=Virtual_interval,START_TIME=SET_START_TIME, finish_end_time=FINISH_TIME),columns=Kline_column)
         print(History_KLine)
         History_KLine.to_csv("History_KLine.csv")
         #複製資料
@@ -685,6 +697,11 @@ if __name__ == "__main__":
         #print("History_KLine.index() = ",len(History_KLine.index))
         #print("History_KLine_Export")
         #print(History_KLine_Export)
+        #format='%y-%m-%d_%H-%M'
+        #print(History_KLine_Export)
+        #print(History_KLine_Export.loc[1,'Open_time'].to_pydatetime())
+        #print('teim=',History_KLine_Export.loc[1,'Open_time'].to_pydatetime().strftime(format='%Y-%m-%d_%H-%M'))
+        #print('日期測試=',datetime.strptime(,format='%y-%m-%d_%H-%M'))
         #sys.exit(0)
     #=========================================================================================================================
     print("wallet =",get_balance('USDT'))
@@ -703,7 +720,7 @@ if __name__ == "__main__":
     #初始資金
     start_finance = float(get_balance('USDT'))
     if Virtual_flag:
-        Virtual_total_funding = start_finance
+        start_finance = Virtual_total_funding
         print("虛擬初始資金 = ",Virtual_total_funding)
     else:
         print("初始資金 =",start_finance)
@@ -749,12 +766,22 @@ if __name__ == "__main__":
             if Virtual_flag or new_time - old_time >= 60:
                 #判斷當前方向
                 print("===========================================================")
-                print('start_time = {}'.format(datetime.now()))
-                open_time_direction, kline_data = indicator_cal()
-                print('end_time = {}'.format(datetime.now()))
-                print(datetime.now())
+                if not Virtual_flag:
+                    print('start_time = {}'.format(datetime.now()))
+                    open_time_direction, kline_data = indicator_cal()
+                    print('end_time = {}'.format(datetime.now()))
+                    print(datetime.now())
+                else:
+                    print("History date =",History_KLine_Export.loc[Virtual_timer,'Open_time'])
+                    open_time_direction, kline_data = indicator_cal()
                 if open_time_direction != '':
-                    open_time = datetime.now()
+                    if Virtual_flag:
+                        open_time = History_KLine.loc[Virtual_timer,'Open_time'].to_datetime64()
+                    else:
+                        open_time = datetime.now()
+                    start_finance = get_balance('USDT')
+                    trade_num = int(start_finance/100)*0.01
+                    logging.debug(f"開單 =>start_finance={start_finance}; trade_num={trade_num}")
                     order_id = new_order(SYMBOL, open_time_direction, trade_num)
                     #錯誤發生時,order_id = 0
                     if order_id != 0:
@@ -789,6 +816,8 @@ if __name__ == "__main__":
                             order_id = new_order(SYMBOL, 'SELL', trade_num)
                             close_price = get_order(SYMBOL, order_id)
                             close_fee = close_price / 20 *trade_num * 0.0002
+                            if Virtual_flag and Virtual_position_falg:
+                                Virtual_position_falg =False
                             open_fee = ''
                             dup_time = 0
                             open_time_direction = ''
@@ -816,6 +845,8 @@ if __name__ == "__main__":
                                 order_id = new_order(SYMBOL, 'SELL', trade_num)
                                 close_price = get_order(SYMBOL, order_id)
                                 close_fee = close_price / 20 *trade_num * 0.0002
+                                if Virtual_flag and Virtual_position_falg:
+                                    Virtual_position_falg =False
                                 open_fee = ''
                                 dup_time = 0
                                 open_time_direction = ''
@@ -835,6 +866,8 @@ if __name__ == "__main__":
                             order_id = new_order(SYMBOL, 'BUY', trade_num)
                             close_price = get_order(SYMBOL, order_id)
                             close_fee = close_price / 20 *trade_num * 0.0002
+                            if Virtual_flag and Virtual_position_falg:
+                                Virtual_position_falg =False
                             dup_time = 0
                             open_time_direction = ''
                             open_time = ''
@@ -859,6 +892,8 @@ if __name__ == "__main__":
                                 order_id = new_order(SYMBOL, 'BUY', trade_num)
                                 close_price = get_order(SYMBOL, order_id)
                                 close_fee = close_price / 20 * trade_num * 0.0002
+                                if Virtual_flag and Virtual_position_falg:
+                                    Virtual_position_falg =False
                                 dup_time = 0
                                 open_time_direction = ''
                                 open_time = ''
@@ -870,6 +905,8 @@ if __name__ == "__main__":
                                 dup_profit += 1
         if Virtual_flag and Virtual_position_falg:
             Virtual_position_display()
+            print("open_time_direction=",open_time_direction,"; now_price=",get_price(SYMBOL),"; open_price = ",open_price, "; dup_profit=",dup_profit)
+            print("當前價格=",History_KLine.loc[Virtual_timer,'Close'])
             print("#已有倉位; Virtual_position =",Virtual_position,"; Virtual_position_open_price=",Virtual_position_open_price, \
                 "; Virtual_position_margin =",Virtual_position_margin, "; Virtual_position_trade_num =",Virtual_position_trade_num,\
                     "; Virtual_position_way=",Virtual_position_way)
@@ -878,7 +915,9 @@ if __name__ == "__main__":
         print("Virtual_timer =",Virtual_timer)
         if Virtual_flag and Virtual_timer >= len(History_KLine.index):
             print("Virtual_total_funding = ",Virtual_total_funding)
-            History_KLine_Export.to_csv("test_2.csv")
+            Start_datetime = History_KLine_Export.loc[0,'Open_time'].to_pydatetime().strftime(format='%Y-%m-%d_%H-%M')
+            End_datetime = History_KLine_Export.loc[len(History_KLine_Export.index)-1,'Open_time'].to_pydatetime().strftime(format='%Y-%m-%d_%H-%M')
+            History_KLine_Export.to_csv(f"{SYMBOL}_{Virtual_interval}_{Start_datetime}_to_{End_datetime}.csv")
             print("回測結束")
             break
         
