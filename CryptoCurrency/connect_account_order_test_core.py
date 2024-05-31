@@ -71,6 +71,10 @@ Virtual_position_open_price = 0.0
 Virtual_position_trade_num = 0.0
 
 
+#需要主程式設定
+Start_time_str = ""
+End_time_str = ""
+
 
 
 #設定loging訊息
@@ -643,31 +647,29 @@ class Auto_virtual_position_cal(threading.Thread):
                     Virtual_position_display()
     
 
-
-if __name__ == "__main__": 
-    #=========================================================================================================================
-    '''
-    #測試讀取歷史數據
-    print("datetime.now() =",datetime.now())
-    print(time.time())
-    #SET_START_TIME = cal_timestrip("2019-01-01 0:0:0.0")
-    SET_START_TIME = cal_timestrip("2019-01-01 0:0:0.0")
-    print("SET_START_TIME=",SET_START_TIME)
-    FINISH_TIME = cal_timestrip(str(datetime.now()))
-    print("FINISH_TIME=",FINISH_TIME)
-    #獲取K線資料    
-    KLine = pd.DataFrame(get_history_kline(interval='1m',START_TIME=SET_START_TIME, finish_end_time=FINISH_TIME),columns=Kline_column)
-    print(KLine)
-    #將今天的日期作為輸出的檔案名稱
-    tmp_date = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
-    KLine.to_csv(f"{tmp_date}.csv")
-    sys.exit(0)
-    '''
+def main_function()-> None:
+    """_summary_
+    用來讓另外一個程式來執行
+    """
+    global Virtual_position_falg
+    global Virtual_position
+    global Virtual_position_way
+    global Virtual_position_margin
+    global Virtual_position_open_price
+    global Virtual_position_trade_num
+    global Virtual_total_funding
+    global Virtual_timer
+    global History_KLine_Export
+    global History_KLine
+    global Start_time_str
+    global End_time_str
+        #=========================================================================================================================
     #啟動回測模擬
     if Virtual_flag:
-        SET_START_TIME = cal_timestrip("2019-01-01 0:0:0.0")
+        SET_START_TIME = cal_timestrip(Start_time_str+".0")
         print("SET_START_TIME=",datetime.fromtimestamp(float(SET_START_TIME/1000)))
-        FINISH_TIME = cal_timestrip(str(datetime.now()))
+        #FINISH_TIME = cal_timestrip(str(datetime.now()))
+        FINISH_TIME = cal_timestrip(End_time_str+".0")
         print("FINISH_TIME=",datetime.fromtimestamp(float(FINISH_TIME/1000)))
         print(datetime.fromtimestamp(float(SET_START_TIME/1000)),"到",datetime.fromtimestamp(float(FINISH_TIME/1000)),"回測資料")
         History_KLine = pd.DataFrame(get_history_kline(interval=Virtual_interval,START_TIME=SET_START_TIME, finish_end_time=FINISH_TIME),columns=Kline_column)
@@ -688,21 +690,6 @@ if __name__ == "__main__":
         History_KLine_Export['Trade_Number'] = ''
         History_KLine_Export['Trade_Margin'] = ''
         History_KLine_Export['Taker_fee'] = ''
-        '''
-        auto_virtual_position_function = Auto_virtual_position_cal()
-        auto_virtual_position_function.daemon = True
-        auto_virtual_position_function.start()
-        '''
-        #History_KLine_Export.loc[0,'Taker_fee'] = 123
-        #print("History_KLine.index() = ",len(History_KLine.index))
-        #print("History_KLine_Export")
-        #print(History_KLine_Export)
-        #format='%y-%m-%d_%H-%M'
-        #print(History_KLine_Export)
-        #print(History_KLine_Export.loc[1,'Open_time'].to_pydatetime())
-        #print('teim=',History_KLine_Export.loc[1,'Open_time'].to_pydatetime().strftime(format='%Y-%m-%d_%H-%M'))
-        #print('日期測試=',datetime.strptime(,format='%y-%m-%d_%H-%M'))
-        #sys.exit(0)
     #=========================================================================================================================
     print("wallet =",get_balance('USDT'))
     
@@ -918,7 +905,13 @@ if __name__ == "__main__":
             Start_datetime = History_KLine_Export.loc[0,'Open_time'].to_pydatetime().strftime(format='%Y-%m-%d_%H-%M')
             End_datetime = History_KLine_Export.loc[len(History_KLine_Export.index)-1,'Open_time'].to_pydatetime().strftime(format='%Y-%m-%d_%H-%M')
             History_KLine_Export.to_csv(f"{SYMBOL}_{Virtual_interval}_{Start_datetime}_to_{End_datetime}.csv")
+            Virtual_timer = 0
             print("回測結束")
             break
         
-        
+
+
+
+
+if __name__ == "__main__": 
+   pass
