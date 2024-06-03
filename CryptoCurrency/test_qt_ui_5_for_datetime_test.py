@@ -7,10 +7,36 @@
 
 import datetime
 import threading
+from queue import Queue
+from queue import Empty
 from PyQt6 import QtCore, QtGui, QtWidgets
-
+from PyQt6.QtWidgets import QTextBrowser
 import connect_account_order_test_core
 
+class textBrowser_terminal(threading.Thread):
+    """
+    使用TextBrowser來顯示副程式print資訊
+    Args:
+        threading (_type_): 宣告種類
+    """
+    def __init__(self, queue:Queue, textBrowser:QTextBrowser):
+        """_summary_
+        宣告後立即會執行的東西
+        Args:
+            queue (Queue): 都進來的存列
+            total_num (int): 總資料筆數
+        """
+        threading.Thread.__init__(self)
+        self.queue = queue
+        self.text_Browser = textBrowser
+
+    def run(self):
+        while True:
+            try:
+                get_value = self.queue.get(timeout=20)
+                self.text_Browser.append(get_value)
+            except Empty:
+                break
 
 class Ui_Form(object):
     def setupUi(self, Form:QtWidgets.QWidget):
@@ -50,19 +76,19 @@ class Ui_Form(object):
         self.verticalLayout = QtWidgets.QVBoxLayout(self.widget)
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout.setObjectName("verticalLayout")
-        self.radioButton_1 = QtWidgets.QRadioButton(parent=self.widget)
-        self.radioButton_1.setObjectName("radioButton_1")
-        self.verticalLayout.addWidget(self.radioButton_1)
-        self.radioButton_2 = QtWidgets.QRadioButton(parent=self.widget)
-        self.radioButton_2.setObjectName("radioButton_2")
-        self.verticalLayout.addWidget(self.radioButton_2)
-        self.lineEdit = QtWidgets.QLineEdit(parent=Form)
-        self.lineEdit.setGeometry(QtCore.QRect(130, 10, 431, 21))
-        self.lineEdit.setObjectName("lineEdit")
-        self.lineEdit_2 = QtWidgets.QLineEdit(parent=Form)
-        self.lineEdit_2.setGeometry(QtCore.QRect(130, 40, 431, 21))
-        self.lineEdit_2.setClearButtonEnabled(False)
-        self.lineEdit_2.setObjectName("lineEdit_2")
+        self.radioButton_connect_real_account = QtWidgets.QRadioButton(parent=self.widget)
+        self.radioButton_connect_real_account.setObjectName("radioButton_connect_real_account")
+        self.verticalLayout.addWidget(self.radioButton_connect_real_account)
+        self.radioButton_connect_virtual_account = QtWidgets.QRadioButton(parent=self.widget)
+        self.radioButton_connect_virtual_account.setObjectName("radioButton_connect_virtual_account")
+        self.verticalLayout.addWidget(self.radioButton_connect_virtual_account)
+        self.lineEdit_API = QtWidgets.QLineEdit(parent=Form)
+        self.lineEdit_API.setGeometry(QtCore.QRect(130, 10, 431, 21))
+        self.lineEdit_API.setObjectName("lineEdit_API")
+        self.lineEdit_SCRET = QtWidgets.QLineEdit(parent=Form)
+        self.lineEdit_SCRET.setGeometry(QtCore.QRect(130, 40, 431, 21))
+        self.lineEdit_SCRET.setClearButtonEnabled(False)
+        self.lineEdit_SCRET.setObjectName("lineEdit_SCRET")
         self.label_4 = QtWidgets.QLabel(parent=Form)
         self.label_4.setGeometry(QtCore.QRect(20, 40, 91, 20))
         font = QtGui.QFont()
@@ -70,12 +96,22 @@ class Ui_Form(object):
         font.setPointSize(18)
         self.label_4.setFont(font)
         self.label_4.setObjectName("label_4")
-
+        self.radioButton_connect_virtual_account.setChecked(True)
+        self.radioButton_connect_virtual_account.toggled.connect(lambda:self.check_connect_real_account())
+        self.lineEdit_API.setText(connect_account_order_test_core.API_KEY)
+        self.lineEdit_SCRET.setText(connect_account_order_test_core.SECRET_KEY)
+        self.lineEdit_API.textChanged.connect(lambda:self.set_api_scret())
+        self.lineEdit_SCRET.textChanged.connect(lambda:self.set_api_scret())
+        self.textBrowser_Queue = Queue()
+        
+        
+        
         self.retranslateUi(Form)
         QtCore.QMetaObject.connectSlotsByName(Form)
         self.thread = threading.Thread(target=self.conduct_proce)
         self.thread.daemon = True
-        #thread.start()
+        
+        
 
     def retranslateUi(self, Form):
         _translate = QtCore.QCoreApplication.translate
@@ -86,14 +122,16 @@ class Ui_Form(object):
         self.Start_dateTimeEdit.setDisplayFormat(_translate("Form", "yyyy/M/d  hh:mm:ss"))
         self.label.setText(_translate("Form", "Start Date Time"))
         self.label_3.setText(_translate("Form", "API"))
-        self.radioButton_1.setText(_translate("Form", "連接實體帳戶"))
-        self.radioButton_2.setText(_translate("Form", "模擬回測"))
+        self.radioButton_connect_real_account.setText(_translate("Form", "連接實體帳戶"))
+        self.radioButton_connect_virtual_account.setText(_translate("Form", "模擬回測"))
         self.label_4.setText(_translate("Form", "SECRET"))
-        self.lineEdit_2.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        self.lineEdit_SCRET.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
         self.Back_test_Button.clicked.connect(lambda:self.Show_data())
         self.End_dateTimeEdit.setDateTime(QtCore.QDateTime().currentDateTime())
         
     def Show_data(self):
+        """會計算回測資料,並且輸出所選取的日期的csv資料
+        """
         get_datetime = self.Start_dateTimeEdit.text()
         get_datetime_c = datetime.datetime.strptime(get_datetime,"%Y/%m/%d  %H:%M:%S")
         get_datetime_c_str = get_datetime_c.strftime("%Y-%m-%d  %H:%M:%S")
@@ -120,11 +158,50 @@ class Ui_Form(object):
                 break
             print("thread.is_alive")
         self.thread.start()
+
+    
+    def check_connect_real_account(self):
+        """切換為實體帳戶時,檢查API_KEY與Scret_key是否正常
+        """
+        if self.radioButton_connect_virtual_account.isChecked():
+            connect_account_order_test_core.Virtual_flag = True
+            self.Back_test_Button.setDisabled(False)
+        else:
+            connect_account_order_test_core.Virtual_flag = False
+            if connect_account_order_test_core.get_balance() == None:
+                self.textBrowser.append("無法連線實體帳戶")
+                self.radioButton_connect_virtual_account.setChecked(True)
+                connect_account_order_test_core.Virtual_flag = True
+            else:
+                self.Back_test_Button.setDisabled(True)
+ 
+            
+        
     
     def conduct_proce(self):
-        connect_account_order_test_core.main_function()
+        """使用多執行續,在回測開始時,來額外執行回測計算
+        """
+        self.textBrowser_Queue_thread = textBrowser_terminal(self.textBrowser_Queue, self.textBrowser)
+        self.textBrowser_Queue_thread.daemon =True
+        self.textBrowser_Queue_thread.start()
+        self.textBrowser.append(connect_account_order_test_core.main_function())
         self.Back_test_Button.setDisabled(False)
+
+    def set_api_scret(self):
+        """當API與SCRET更改的時候,會自動更新
+        """
+        #self.textBrowser.append(self.lineEdit_API.text())
+        #self.textBrowser.append(self.lineEdit_SCRET.text())
+        self.textBrowser.append("更新API與SCRET KEY")
+        connect_account_order_test_core.API_KEY = self.lineEdit_API.text()
+        connect_account_order_test_core.SECRET_KEY = self.lineEdit_SCRET.text()
+        connect_account_order_test_core.um_futures_client = connect_account_order_test_core.UMFutures(
+            key=connect_account_order_test_core.API_KEY,
+            secret=connect_account_order_test_core.SECRET_KEY,
+            base_url = connect_account_order_test_core.BASE_URL
+        )
          
+    
         
         
 

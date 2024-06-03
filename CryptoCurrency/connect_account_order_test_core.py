@@ -175,7 +175,7 @@ def get_balance(symbol:str = 'USDT') -> str|None:
     global Virtual_flag
     global Virtual_total_funding
     if Virtual_flag:
-        return Virtual_total_funding
+        return str(Virtual_total_funding)
     while True:
         try:
             response = um_futures_client.balance(recvWindow=4000)
@@ -191,6 +191,9 @@ def get_balance(symbol:str = 'USDT') -> str|None:
                 "Found error. status: %s,error code: %s, error message: %s", \
                     error.status_code, error.error_code, error.error_message
             )
+            if error.error_message == "API-key format invalid.":
+                #print("API錯誤")
+                return None
             traceback.print_stack()
             count_down_ten_seconds()
             continue
@@ -258,8 +261,11 @@ def get_history_kline(symbol:str="BTCUSDT",
     process_bar = Progress_bar(data_queue,TOTAL_DATA_NUM)
     process_bar.daemon = True
     process_bar.start()
-    data_queue.put(500)
-    TOTAL_DATA_NUM -= 500
+    if TOTAL_DATA_NUM <= 500:
+        data_queue.put(TOTAL_DATA_NUM)
+    else:
+        data_queue.put(500)
+        TOTAL_DATA_NUM -= 500
     START_TIME = END_TIME
     while finish_end_time > START_TIME:
         END_TIME = START_TIME + time_sec.get(interval)*500*1000
@@ -673,8 +679,12 @@ def main_function()-> None:
         print("FINISH_TIME=",datetime.fromtimestamp(float(FINISH_TIME/1000)))
         print(datetime.fromtimestamp(float(SET_START_TIME/1000)),"到",datetime.fromtimestamp(float(FINISH_TIME/1000)),"回測資料")
         History_KLine = pd.DataFrame(get_history_kline(interval=Virtual_interval,START_TIME=SET_START_TIME, finish_end_time=FINISH_TIME),columns=Kline_column)
+        if len(History_KLine.index) < 50:
+            return_message = "當前資料筆為"+str(len(History_KLine.index))+"小於最小回測資料筆數50筆,終止回測"
+            return return_message
         print(History_KLine)
-        History_KLine.to_csv("History_KLine.csv")
+        #匯出資料
+        #History_KLine.to_csv("History_KLine.csv")
         #複製資料
         History_KLine_Export = History_KLine.copy()
         #將時間轉換為人可讀的日期
@@ -766,7 +776,7 @@ def main_function()-> None:
                         open_time = pd.to_datetime(History_KLine.loc[Virtual_timer,'Open_time'],unit='ms')
                     else:
                         open_time = datetime.now()
-                    start_finance = get_balance('USDT')
+                    start_finance = float(get_balance('USDT'))
                     trade_num = int(start_finance/100)*0.01
                     logging.debug(f"開單 =>start_finance={start_finance}; trade_num={trade_num}")
                     order_id = new_order(SYMBOL, open_time_direction, trade_num)
@@ -907,6 +917,9 @@ def main_function()-> None:
             History_KLine_Export.to_csv(f"{SYMBOL}_{Virtual_interval}_{Start_datetime}_to_{End_datetime}.csv")
             Virtual_timer = 0
             print("回測結束")
+            return_message = "回測結束"+"\nVirtual_total_funding = "+str(Virtual_total_funding)+\
+                "\n已匯出資料=>"+ f"{SYMBOL}_{Virtual_interval}_{Start_datetime}_to_{End_datetime}.csv"
+            return return_message
             break
         
 
