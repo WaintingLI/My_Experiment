@@ -7,6 +7,7 @@
 
 import datetime
 import threading
+import time
 from queue import Queue
 from queue import Empty
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -19,7 +20,7 @@ class textBrowser_terminal(threading.Thread):
     Args:
         threading (_type_): 宣告種類
     """
-    def __init__(self, queue:Queue, textBrowser:QTextBrowser):
+    def __init__(self, queue:Queue, textBrowser:QTextBrowser, prgress_bar:QtWidgets.QProgressBar):
         """_summary_
         宣告後立即會執行的東西
         Args:
@@ -29,19 +30,33 @@ class textBrowser_terminal(threading.Thread):
         threading.Thread.__init__(self)
         self.queue = queue
         self.text_Browser = textBrowser
+        self.prgress_bar = prgress_bar
 
     def run(self):
         while True:
             try:
+                #print("獲取存列資料")
                 get_value = self.queue.get(timeout=20)
-                self.text_Browser.append(get_value)
+                self.queue.task_done()
+                get_int = int(get_value)
+                self.prgress_bar.setValue(get_int)
+                """
+                if get_value == None:
+                    time.sleep(10)
+                    continue
+                """
+                #get_str = str(get_value)
+                #time.sleep(0.002)
+                #self.text_Browser.append(get_str)
+                if get_int >= 100:
+                    break
             except Empty:
                 break
 
 class Ui_Form(object):
     def setupUi(self, Form:QtWidgets.QWidget):
         Form.setObjectName("Form")
-        Form.resize(892, 567)
+        Form.resize(892, 594)
         Form.setFixedSize(Form.width(), Form.height())
         self.Back_test_Button = QtWidgets.QPushButton(parent=Form)
         self.Back_test_Button.setGeometry(QtCore.QRect(340, 70, 75, 23))
@@ -96,6 +111,14 @@ class Ui_Form(object):
         font.setPointSize(18)
         self.label_4.setFont(font)
         self.label_4.setObjectName("label_4")
+        self.progressBar = QtWidgets.QProgressBar(parent=Form)
+        self.progressBar.setGeometry(QtCore.QRect(30, 560, 841, 23))
+        self.progressBar.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.NoContextMenu)
+        self.progressBar.setProperty("value", 0)
+        self.progressBar.setValue(0)
+        self.progressBar.setFormat("%p%")
+        self.progressBar.setObjectName("progressBar")
+        self.get_message_timer = QtCore.QTimer()
         self.radioButton_connect_virtual_account.setChecked(True)
         self.radioButton_connect_virtual_account.toggled.connect(lambda:self.check_connect_real_account())
         self.lineEdit_API.setText(connect_account_order_test_core.API_KEY)
@@ -103,7 +126,7 @@ class Ui_Form(object):
         self.lineEdit_API.textChanged.connect(lambda:self.set_api_scret())
         self.lineEdit_SCRET.textChanged.connect(lambda:self.set_api_scret())
         self.textBrowser_Queue = Queue()
-        
+        self.textBrowser.textChanged.connect(lambda:self.qtextbrowser_roll_to_bottom())
         
         
         self.retranslateUi(Form)
@@ -111,11 +134,10 @@ class Ui_Form(object):
         self.thread = threading.Thread(target=self.conduct_proce)
         self.thread.daemon = True
         
-        
 
-    def retranslateUi(self, Form):
+    def retranslateUi(self, Form:QtWidgets.QWidget):
         _translate = QtCore.QCoreApplication.translate
-        Form.setWindowTitle(_translate("Form", "Form"))
+        Form.setWindowTitle(_translate("Form", "測試自動交易介面"))
         self.Back_test_Button.setText(_translate("Form", "開始"))
         self.label_2.setText(_translate("Form", "End Date Time"))
         self.End_dateTimeEdit.setDisplayFormat(_translate("Form", "yyyy/M/d  hh:mm:ss"))
@@ -128,6 +150,8 @@ class Ui_Form(object):
         self.lineEdit_SCRET.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
         self.Back_test_Button.clicked.connect(lambda:self.Show_data())
         self.End_dateTimeEdit.setDateTime(QtCore.QDateTime().currentDateTime())
+        #connect_account_order_test_core.#print_terminal = self.textBrowser_Queue
+        #connect_account_order_test_core.print_progress_bar = self.progressBar
         
     def Show_data(self):
         """會計算回測資料,並且輸出所選取的日期的csv資料
@@ -150,6 +174,8 @@ class Ui_Form(object):
         #print("get_datetime_c =",get_datetime_c,type(get_datetime_c))
         #connect_account_order_test_core.main_function()
         self.Back_test_Button.setDisabled(True)
+        self.radioButton_connect_real_account.setDisabled(True)
+        self.radioButton_connect_virtual_account.setDisabled(True)
         while True:
             if not self.thread.is_alive():
                 self.thread = None
@@ -158,6 +184,14 @@ class Ui_Form(object):
                 break
             print("thread.is_alive")
         self.thread.start()
+        self.get_message_timer.timeout.connect(lambda:self.timer_get_data())
+        self.get_message_timer.start(1)
+        '''
+        使用threading 去接收資料
+        self.textBrowser_Queue_thread = textBrowser_terminal(self.textBrowser_Queue, self.textBrowser, self.progressBar)
+        self.textBrowser_Queue_thread.daemon =True
+        self.textBrowser_Queue_thread.start()
+        '''
 
     
     def check_connect_real_account(self):
@@ -179,13 +213,16 @@ class Ui_Form(object):
         
     
     def conduct_proce(self):
-        """使用多執行續,在回測開始時,來額外執行回測計算
+        """使用多執行續,在回測開始時,來額外執行回測計算,並且使用另外一個執行續來顯示資料
         """
-        self.textBrowser_Queue_thread = textBrowser_terminal(self.textBrowser_Queue, self.textBrowser)
-        self.textBrowser_Queue_thread.daemon =True
-        self.textBrowser_Queue_thread.start()
-        self.textBrowser.append(connect_account_order_test_core.main_function())
+        #self.textBrowser_Queue_thread = textBrowser_terminal(self.textBrowser_Queue, self.textBrowser)
+        #self.textBrowser_Queue_thread.daemon =True
+        #self.textBrowser_Queue_thread.start()
+        #self.textBrowser.append(connect_account_order_test_core.main_function(self.textBrowser_Queue))
+        self.textBrowser.append(connect_account_order_test_core.main_function(self.textBrowser_Queue))
         self.Back_test_Button.setDisabled(False)
+        self.radioButton_connect_real_account.setDisabled(False)
+        self.radioButton_connect_virtual_account.setDisabled(False)
 
     def set_api_scret(self):
         """當API與SCRET更改的時候,會自動更新
@@ -201,8 +238,33 @@ class Ui_Form(object):
             base_url = connect_account_order_test_core.BASE_URL
         )
          
+    def qtextbrowser_roll_to_bottom(self):
+        """自動化動視窗到底部
+        """
+        verti_bar = self.textBrowser.verticalScrollBar()
+        verti_bar.setValue(verti_bar.maximum())
     
+    def timer_get_data(self):
+        """使用timer來更新Ui
+        """
+        get_queue = self.textBrowser_Queue
+        #get_value = self.queue.get(timeout=20)
+        try:
+            get_value = get_queue.get(timeout=1)
+            get_queue.task_done()
+            get_int = int(get_value)
+            self.progressBar.setValue(get_int)
+        except Empty:
+            if self.progressBar.value() >= 100:
+                try:
+                    while get_queue.get(timeout=1): pass
+                except Empty:
+                    pass
+                self.progressBar.setValue(0)
+                self.get_message_timer.stop()
+            
         
+            
         
 
 if __name__ == "__main__":
