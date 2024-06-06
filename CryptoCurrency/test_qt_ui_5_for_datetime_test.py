@@ -11,8 +11,9 @@ import time
 from queue import Queue
 from queue import Empty
 from PyQt6 import QtCore, QtGui, QtWidgets
-from PyQt6.QtWidgets import QTextBrowser
 import connect_account_order_test_core
+import signal
+#from signal import pthread_kill, SIGTSTP
 
 class textBrowser_terminal(threading.Thread):
     """
@@ -20,7 +21,7 @@ class textBrowser_terminal(threading.Thread):
     Args:
         threading (_type_): 宣告種類
     """
-    def __init__(self, queue:Queue, textBrowser:QTextBrowser, prgress_bar:QtWidgets.QProgressBar):
+    def __init__(self, queue:Queue, textBrowser:QtWidgets.QTextBrowser, prgress_bar:QtWidgets.QProgressBar):
         """_summary_
         宣告後立即會執行的東西
         Args:
@@ -54,6 +55,10 @@ class textBrowser_terminal(threading.Thread):
                 break
 
 class Ui_Form(object):
+    """建立UI
+    Args:
+        object (_type_): any
+    """
     def setupUi(self, Form:QtWidgets.QWidget):
         Form.setObjectName("Form")
         Form.resize(892, 594)
@@ -61,6 +66,9 @@ class Ui_Form(object):
         self.Back_test_Button = QtWidgets.QPushButton(parent=Form)
         self.Back_test_Button.setGeometry(QtCore.QRect(340, 70, 75, 23))
         self.Back_test_Button.setObjectName("Back_test_Button")
+        self.Connect_real_account_Button = QtWidgets.QPushButton(parent=Form)
+        self.Connect_real_account_Button.setGeometry(QtCore.QRect(810, 40, 80, 25))
+        self.Connect_real_account_Button.setObjectName("Connect_real_account_Button")
         self.label_2 = QtWidgets.QLabel(parent=Form)
         self.label_2.setGeometry(QtCore.QRect(40, 100, 71, 21))
         self.label_2.setObjectName("label_2")
@@ -120,6 +128,7 @@ class Ui_Form(object):
         self.progressBar.setObjectName("progressBar")
         self.get_message_timer = QtCore.QTimer()
         self.radioButton_connect_virtual_account.setChecked(True)
+        self.Connect_real_account_Button.setDisabled(True)
         self.radioButton_connect_virtual_account.toggled.connect(lambda:self.check_connect_real_account())
         self.lineEdit_API.setText(connect_account_order_test_core.API_KEY)
         self.lineEdit_SCRET.setText(connect_account_order_test_core.SECRET_KEY)
@@ -127,18 +136,18 @@ class Ui_Form(object):
         self.lineEdit_SCRET.textChanged.connect(lambda:self.set_api_scret())
         self.textBrowser_Queue = Queue()
         self.textBrowser.textChanged.connect(lambda:self.qtextbrowser_roll_to_bottom())
-        
+        self.Connect_real_account_Button.clicked.connect(lambda:self.connect_real_account_Button_clicked())
         
         self.retranslateUi(Form)
         QtCore.QMetaObject.connectSlotsByName(Form)
         self.thread = threading.Thread(target=self.conduct_proce)
         self.thread.daemon = True
         
-
     def retranslateUi(self, Form:QtWidgets.QWidget):
         _translate = QtCore.QCoreApplication.translate
         Form.setWindowTitle(_translate("Form", "測試自動交易介面"))
         self.Back_test_Button.setText(_translate("Form", "開始"))
+        self.Connect_real_account_Button.setText(_translate("Form", "連線實體帳戶"))
         self.label_2.setText(_translate("Form", "End Date Time"))
         self.End_dateTimeEdit.setDisplayFormat(_translate("Form", "yyyy/M/d  hh:mm:ss"))
         self.Start_dateTimeEdit.setDisplayFormat(_translate("Form", "yyyy/M/d  hh:mm:ss"))
@@ -197,9 +206,11 @@ class Ui_Form(object):
     def check_connect_real_account(self):
         """切換為實體帳戶時,檢查API_KEY與Scret_key是否正常
         """
+        print("self.radioButton_connect_virtual_account.isChecked() =",self.radioButton_connect_virtual_account.isChecked())
         if self.radioButton_connect_virtual_account.isChecked():
             connect_account_order_test_core.Virtual_flag = True
             self.Back_test_Button.setDisabled(False)
+            self.Connect_real_account_Button.setDisabled(True)
         else:
             connect_account_order_test_core.Virtual_flag = False
             if connect_account_order_test_core.get_balance() == None:
@@ -208,9 +219,32 @@ class Ui_Form(object):
                 connect_account_order_test_core.Virtual_flag = True
             else:
                 self.Back_test_Button.setDisabled(True)
- 
-            
-        
+                self.Connect_real_account_Button.setDisabled(False)
+
+    
+    def connect_real_account_Button_clicked(self):
+        """按下實體按鍵後,會改變按鍵顯示資訊
+        """
+        print(self.Connect_real_account_Button.text())
+        if self.Connect_real_account_Button.text() == "終止連線":
+            self.Connect_real_account_Button.setText("連線實體帳戶")
+            connect_account_order_test_core.Force_stop_flag = True
+            self.radioButton_connect_real_account.setDisabled(False)
+            self.radioButton_connect_virtual_account.setDisabled(False)
+            time.sleep(1)
+        else:
+            self.Connect_real_account_Button.setText("終止連線")
+            self.radioButton_connect_real_account.setDisabled(True)
+            self.radioButton_connect_virtual_account.setDisabled(True)
+            while True:
+                if not self.thread.is_alive():
+                    self.thread = None
+                    self.thread = threading.Thread(target=self.conduct_proce)
+                    self.thread.daemon = True
+                    break
+                print("thread.is_alive")
+                time.sleep(1)
+            self.thread.start()
     
     def conduct_proce(self):
         """使用多執行續,在回測開始時,來額外執行回測計算,並且使用另外一個執行續來顯示資料
@@ -219,10 +253,12 @@ class Ui_Form(object):
         #self.textBrowser_Queue_thread.daemon =True
         #self.textBrowser_Queue_thread.start()
         #self.textBrowser.append(connect_account_order_test_core.main_function(self.textBrowser_Queue))
+        print("conduct_proce testing")
         self.textBrowser.append(connect_account_order_test_core.main_function(self.textBrowser_Queue))
         self.Back_test_Button.setDisabled(False)
         self.radioButton_connect_real_account.setDisabled(False)
         self.radioButton_connect_virtual_account.setDisabled(False)
+        print("conduct_proce testing_結束")
 
     def set_api_scret(self):
         """當API與SCRET更改的時候,會自動更新
@@ -249,19 +285,35 @@ class Ui_Form(object):
         """
         get_queue = self.textBrowser_Queue
         #get_value = self.queue.get(timeout=20)
-        try:
-            get_value = get_queue.get(timeout=1)
-            get_queue.task_done()
-            get_int = int(get_value)
-            self.progressBar.setValue(get_int)
-        except Empty:
-            if self.progressBar.value() >= 100:
-                try:
-                    while get_queue.get(timeout=1): pass
-                except Empty:
+        if connect_account_order_test_core.Virtual_flag:
+            #當在模擬回測時
+            try:
+                get_value = get_queue.get(timeout=1)
+                print("type(get_value)=",type(get_value))
+                get_queue.task_done()
+                if isinstance(get_value,str):
+                    #當輸入值為字串時,忽略
                     pass
-                self.progressBar.setValue(0)
-                self.get_message_timer.stop()
+                else:
+                    get_int = int(get_value)
+                    self.progressBar.setValue(get_int)
+            except Empty:
+                if self.progressBar.value() >= 100:
+                    try:
+                        while get_queue.get(timeout=1): pass
+                    except Empty:
+                        pass
+                    self.progressBar.setValue(0)
+                    self.get_message_timer.stop()
+        else:
+            #當實體連線到真的帳戶操作時
+            try:
+                get_value = get_queue.get(timeout=1)
+                get_queue.task_done()
+                self.textBrowser.append(get_value)
+            except Empty:
+                if self.Connect_real_account_Button.text == "連線實體帳戶":
+                    self.get_message_timer.stop()
             
         
             

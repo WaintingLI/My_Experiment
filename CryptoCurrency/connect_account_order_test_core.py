@@ -23,7 +23,6 @@ from alive_progress import alive_bar
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 
-
 #幣安測試平台宣告金鑰
 #申請的API KEY
 #API_KEY = "99f8e52284b5231ec02ecf51427d6ba8f0cb35ccd6473a0e10dc76ec4ddd39cc"
@@ -50,8 +49,6 @@ Virtual_interval = cf.get("Simulation_back_test","Virtual_interval")
 Virtual_total_funding = cf.getfloat("Simulation_back_test","Virtual_total_funding")
 Virtual_timer = 0
 
-
-
 #存放歷史資料
 History_KLine = pd.DataFrame()
 #存放要匯出的資料
@@ -76,11 +73,10 @@ Virtual_position_trade_num = 0.0
 Start_time_str = ""
 End_time_str = ""
 
-#主程式提供的儲存列
+#給主執行緒提供的參數
 #print_terminal = Queue()
-print_progress_bar = QtWidgets.QProgressBar
-
-
+#print_progress_bar = QtWidgets.QProgressBar
+Force_stop_flag = False
 
 #設定loging訊息
 logger = logging.getLogger(__name__)
@@ -122,7 +118,6 @@ Kline_column = [
     'Ignore'
 ]
 
-
 class Progress_bar(threading.Thread):
     """_summary_
     用來顯示進度條
@@ -153,8 +148,6 @@ class Progress_bar(threading.Thread):
                         break
                 except Empty:
                     break
-
-
 
 
 #倒數十秒
@@ -697,7 +690,7 @@ class Auto_virtual_position_cal(threading.Thread):
                     Virtual_position_display()
     
 
-def main_function(progress_bar:Queue)-> None:
+def main_function(progress_bar_or_message:Queue)-> None:
     """_summary_
     用來讓另外一個程式來執行
     """
@@ -713,10 +706,11 @@ def main_function(progress_bar:Queue)-> None:
     global History_KLine
     global Start_time_str
     global End_time_str
+    global Force_stop_flag
         #=========================================================================================================================
     #啟動回測模擬
     if Virtual_flag:
-        progress_bar.put_nowait(0)
+        progress_bar_or_message.put_nowait(0)
         SET_START_TIME = cal_timestrip(Start_time_str+".0")
         print("SET_START_TIME=",datetime.fromtimestamp(float(SET_START_TIME/1000)))
         #print_terminal.put(f"SET_START_TIME={datetime.fromtimestamp(float(SET_START_TIME/1000))}")
@@ -771,13 +765,13 @@ def main_function(progress_bar:Queue)-> None:
     else:
         data_message = f"初始資金 ={start_finance}"
         print(data_message)
-        #print_terminal.put(data_message)
+        progress_bar_or_message.put(data_message)
     
     #倉位管理以100為單位,每100下0.01張(要購買幣種的數量)
     trade_num = int(start_finance/100)*0.01
     data_message = f"倉位管理={trade_num}"
     print(data_message)
-    #print_terminal.put(data_message)
+    progress_bar_or_message.put(data_message)
     
     #3. 宣告變數 -- 手續費
     open_fee = 0.0
@@ -801,7 +795,7 @@ def main_function(progress_bar:Queue)-> None:
     old_time = 0.0
     #無限迴圈
     while True:
-        if Virtual_flag:
+        if Virtual_flag or Force_stop_flag:
             break
         new_time = time.time()
         if int(new_time) % 60 == 0:
@@ -809,7 +803,7 @@ def main_function(progress_bar:Queue)-> None:
             data_message = f"old_time={old_time}; new_time={new_time}"
             #print("old_time=",old_time,"; new_time=",new_time)
             print(data_message)
-            #print_terminal.put(data_message)
+            progress_bar_or_message.put(data_message)
             break
     while True:
         if Virtual_flag:
@@ -819,18 +813,18 @@ def main_function(progress_bar:Queue)-> None:
             if Virtual_flag or new_time - old_time >= 60:
                 #判斷當前方向
                 print("===========================================================")
-                #print_terminal.put("===========================================================")
+                progress_bar_or_message.put("===========================================================")
                 if not Virtual_flag:
                     data_message = f"start_time = {datetime.now()}"
                     #print('start_time = {}'.format(datetime.now()))
                     print(data_message)
-                    #print_terminal.put(data_message)
+                    progress_bar_or_message.put(data_message)
                     open_time_direction, kline_data = indicator_cal()
                     data_message = f"end_time = {datetime.now()}"
                     #print('end_time = {}'.format(datetime.now()))
                     #print(datetime.now())
                     print(data_message)
-                    #print_terminal.put(data_message)
+                    progress_bar_or_message.put(data_message)
                 else:
                     data_message = f"History date = {History_KLine_Export.loc[Virtual_timer,'Open_time']}"
                     #print("History date =",History_KLine_Export.loc[Virtual_timer,'Open_time'])
@@ -857,7 +851,7 @@ def main_function(progress_bar:Queue)-> None:
                         #print('開單日期{}, 開單價格{}, 開單數量{}, 開單手續費{}'.format(
                         #    open_time, open_price, trade_num, open_fee))
                         print(data_message)
-                        #print_terminal.put(data_message)
+                        progress_bar_or_message.put(data_message)
                     else:
                         temp_fee = int(float(History_KLine.loc[Virtual_timer,'Close']))*trade_num*0.005
                         margin = int(float(History_KLine.loc[Virtual_timer,'Close']))*trade_num/20
@@ -869,7 +863,12 @@ def main_function(progress_bar:Queue)-> None:
                         #print_terminal.put(data_message)
                 old_time = new_time
                 if not Virtual_flag:
-                    time.sleep(59)
+                    for i in range(59):
+                        print(f"倒數{60-i}秒")
+                        time.sleep(1)
+                        if Force_stop_flag:
+                            break
+                    
         elif trade_flag:
             new_time = time.time()
             if Virtual_flag or new_time - old_time >= 60:
@@ -984,10 +983,10 @@ def main_function(progress_bar:Queue)-> None:
                     "; Virtual_position_way=",Virtual_position_way)
         Virtual_timer = Virtual_timer + 1
         start_finance = Virtual_total_funding
-        if int(Virtual_timer/len(History_KLine.index)*100) != int(Virtual_timer-1/len(History_KLine.index)*100):
-            progress_bar.put_nowait(int(Virtual_timer/len(History_KLine.index)*100))
+        if Virtual_flag and int(Virtual_timer/len(History_KLine.index)*100) != int(Virtual_timer-1/len(History_KLine.index)*100):
+            progress_bar_or_message.put_nowait(int(Virtual_timer/len(History_KLine.index)*100))
         if Virtual_flag and Virtual_timer >= len(History_KLine.index):
-            progress_bar.join()
+            progress_bar_or_message.join()
             #print_terminal.join()
             print("Virtual_total_funding = ",Virtual_total_funding)
             Start_datetime = History_KLine_Export.loc[0,'Open_time'].to_pydatetime().strftime(format='%Y-%m-%d_%H-%M')
@@ -999,7 +998,15 @@ def main_function(progress_bar:Queue)-> None:
                 "\n已匯出資料=>"+ f"{SYMBOL}_{Virtual_interval}_{Start_datetime}_to_{End_datetime}.csv"
             return return_message
             break
-        
+        if Force_stop_flag:
+            break       
+    if Virtual_flag and Virtual_timer >= len(History_KLine.index):
+        return_message = "回測結束"+"\nVirtual_total_funding = "+str(Virtual_total_funding)+\
+                "\n已匯出資料=>"+ f"{SYMBOL}_{Virtual_interval}_{Start_datetime}_to_{End_datetime}.csv"
+        return return_message
+    if Force_stop_flag:
+        Force_stop_flag = False
+        return "強制終止"
 
 
 
