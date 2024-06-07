@@ -12,7 +12,7 @@ from queue import Queue
 from queue import Empty
 from PyQt6 import QtCore, QtGui, QtWidgets
 import connect_account_order_test_core
-import signal
+import save_ini_file
 #from signal import pthread_kill, SIGTSTP
 
 class textBrowser_terminal(threading.Thread):
@@ -69,6 +69,9 @@ class Ui_Form(object):
         self.Connect_real_account_Button = QtWidgets.QPushButton(parent=Form)
         self.Connect_real_account_Button.setGeometry(QtCore.QRect(810, 40, 80, 25))
         self.Connect_real_account_Button.setObjectName("Connect_real_account_Button")
+        self.Save_API_SECRET_Button = QtWidgets.QPushButton(parent=Form)
+        self.Save_API_SECRET_Button.setGeometry(QtCore.QRect(570, 10, 91, 23))
+        self.Save_API_SECRET_Button.setObjectName("Save_API_SECRET_Button")
         self.label_2 = QtWidgets.QLabel(parent=Form)
         self.label_2.setGeometry(QtCore.QRect(40, 100, 71, 21))
         self.label_2.setObjectName("label_2")
@@ -129,6 +132,7 @@ class Ui_Form(object):
         self.get_message_timer = QtCore.QTimer()
         self.radioButton_connect_virtual_account.setChecked(True)
         self.Connect_real_account_Button.setDisabled(True)
+        self.Save_API_SECRET_Button.setDisabled(True)
         self.radioButton_connect_virtual_account.toggled.connect(lambda:self.check_connect_real_account())
         self.lineEdit_API.setText(connect_account_order_test_core.API_KEY)
         self.lineEdit_SCRET.setText(connect_account_order_test_core.SECRET_KEY)
@@ -137,6 +141,8 @@ class Ui_Form(object):
         self.textBrowser_Queue = Queue()
         self.textBrowser.textChanged.connect(lambda:self.qtextbrowser_roll_to_bottom())
         self.Connect_real_account_Button.clicked.connect(lambda:self.connect_real_account_Button_clicked())
+        self.Save_API_SECRET_Button.clicked.connect(lambda:self.click_save_api_secret_button())
+        self.get_message_timer.timeout.connect(lambda:self.timer_get_data())
         
         self.retranslateUi(Form)
         QtCore.QMetaObject.connectSlotsByName(Form)
@@ -148,6 +154,7 @@ class Ui_Form(object):
         Form.setWindowTitle(_translate("Form", "測試自動交易介面"))
         self.Back_test_Button.setText(_translate("Form", "開始"))
         self.Connect_real_account_Button.setText(_translate("Form", "連線實體帳戶"))
+        self.Save_API_SECRET_Button.setText(_translate("Form", "保存API Secret"))
         self.label_2.setText(_translate("Form", "End Date Time"))
         self.End_dateTimeEdit.setDisplayFormat(_translate("Form", "yyyy/M/d  hh:mm:ss"))
         self.Start_dateTimeEdit.setDisplayFormat(_translate("Form", "yyyy/M/d  hh:mm:ss"))
@@ -193,7 +200,6 @@ class Ui_Form(object):
                 break
             print("thread.is_alive")
         self.thread.start()
-        self.get_message_timer.timeout.connect(lambda:self.timer_get_data())
         self.get_message_timer.start(1)
         '''
         使用threading 去接收資料
@@ -206,7 +212,6 @@ class Ui_Form(object):
     def check_connect_real_account(self):
         """切換為實體帳戶時,檢查API_KEY與Scret_key是否正常
         """
-        print("self.radioButton_connect_virtual_account.isChecked() =",self.radioButton_connect_virtual_account.isChecked())
         if self.radioButton_connect_virtual_account.isChecked():
             connect_account_order_test_core.Virtual_flag = True
             self.Back_test_Button.setDisabled(False)
@@ -231,6 +236,7 @@ class Ui_Form(object):
             connect_account_order_test_core.Force_stop_flag = True
             self.radioButton_connect_real_account.setDisabled(False)
             self.radioButton_connect_virtual_account.setDisabled(False)
+            self.get_message_timer.stop()
             time.sleep(1)
         else:
             self.Connect_real_account_Button.setText("終止連線")
@@ -245,7 +251,30 @@ class Ui_Form(object):
                 print("thread.is_alive")
                 time.sleep(1)
             self.thread.start()
-    
+            self.get_message_timer.start(1)
+
+    def click_save_api_secret_button(self):
+        """按下後,會儲存API與Secret值到ini檔案
+        """
+        #儲存API值
+        api_result = save_ini_file.save_ini("config.ini","[Binance_Setting]","API_KEY",self.lineEdit_API.text())
+        
+        #儲存SECRET值
+        secret_result = save_ini_file.save_ini("config.ini","[Binance_Setting]","SECRET_KEY",self.lineEdit_SCRET.text())
+        
+        if api_result and secret_result:
+            self.textBrowser.append("API與Secret 儲存成功")
+            self.Save_API_SECRET_Button.setDisabled(True)
+        elif api_result:
+            self.textBrowser.append("API儲存成功")
+            self.textBrowser.append("請檢察ini檔案中,是否有SECRET_KEY相關設定值")
+        elif secret_result:
+            self.textBrowser.append("Secret儲存成功")
+            self.textBrowser.append("請檢察ini檔案中,是否有API_KEY相關設定值")
+        else:
+            self.textBrowser.append("請檢察是否有該config.ini檔案,且該檔案在[Binance_Setting]下是否包含API_KEY與SECRET_KEY的Options")
+
+
     def conduct_proce(self):
         """使用多執行續,在回測開始時,來額外執行回測計算,並且使用另外一個執行續來顯示資料
         """
@@ -266,6 +295,7 @@ class Ui_Form(object):
         #self.textBrowser.append(self.lineEdit_API.text())
         #self.textBrowser.append(self.lineEdit_SCRET.text())
         self.textBrowser.append("更新API與SCRET KEY")
+        self.Save_API_SECRET_Button.setDisabled(False)
         connect_account_order_test_core.API_KEY = self.lineEdit_API.text()
         connect_account_order_test_core.SECRET_KEY = self.lineEdit_SCRET.text()
         connect_account_order_test_core.um_futures_client = connect_account_order_test_core.UMFutures(

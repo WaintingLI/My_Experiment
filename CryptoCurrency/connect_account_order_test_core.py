@@ -68,6 +68,8 @@ Virtual_position_margin = 0.0
 Virtual_position_open_price = 0.0
 Virtual_position_trade_num = 0.0
 
+#全域變數
+print_message_queue = Queue
 
 #需要主程式設定
 Start_time_str = ""
@@ -514,12 +516,13 @@ def Virtual_position_display(trade_num:float=0.0, money:float=0.0,flow:str='') -
     global Virtual_total_funding
     global Virtual_timer
     global History_KLine_Export
+    global print_message_queue
     #global #print_terminal
     
     data_message = f"Virtual_timer ={Virtual_timer};Virtual_position_falg ={Virtual_position_falg}; flow={flow}"
     #print("Virtual_timer =",Virtual_timer,";Virtual_position_falg =",Virtual_position_falg,"; flow=",flow)
     print(data_message)
-    #print_terminal.put(data_message)
+    print_message_queue.put(data_message)
     if Virtual_position_falg and flow == '':
         Virtual_position = \
         (int(float(History_KLine.loc[Virtual_timer,'Close']))-Virtual_position_open_price)*Virtual_position_trade_num
@@ -535,7 +538,7 @@ def Virtual_position_display(trade_num:float=0.0, money:float=0.0,flow:str='') -
             #    ";計算價格 =",int(float(History_KLine.loc[Virtual_timer,'Close'])))
             #print("強制平倉")
             print(data_message)
-            #print_terminal.put(data_message)
+            print_message_queue.put(data_message)
             History_KLine_Export.loc[Virtual_timer,'Position_Status'] = "強制平倉"
             History_KLine_Export.loc[Virtual_timer,'Trade_Profit'] = Virtual_position
             History_KLine_Export.loc[Virtual_timer,'Total_Funding'] = Virtual_total_funding
@@ -571,7 +574,7 @@ def Virtual_position_display(trade_num:float=0.0, money:float=0.0,flow:str='') -
                     ;保證金={History_KLine_Export.loc[Virtual_timer,'Trade_Margin']}\
                     獲利={History_KLine_Export.loc[Virtual_timer,'Trade_Profit']}"
             print(data_message)
-            #print_terminal.put(data_message)
+            print_message_queue.put(data_message)
         else:
             if trade_num > Virtual_position_trade_num:
                 #反向
@@ -608,7 +611,7 @@ def Virtual_position_display(trade_num:float=0.0, money:float=0.0,flow:str='') -
                     ;保證金={History_KLine_Export.loc[Virtual_timer,'Trade_Margin']}\
                     獲利={History_KLine_Export.loc[Virtual_timer,'Trade_Profit']}"
                 print(data_message)
-                #print_terminal.put(data_message)
+                print_message_queue.put(data_message)
             else:
                 #平倉
                 get_temp_fee = (float(History_KLine.loc[Virtual_timer,'Close']) - Virtual_position_open_price)* trade_num
@@ -634,7 +637,7 @@ def Virtual_position_display(trade_num:float=0.0, money:float=0.0,flow:str='') -
                     ;保證金={History_KLine_Export.loc[Virtual_timer,'Trade_Margin']}\
                     獲利={History_KLine_Export.loc[Virtual_timer,'Trade_Profit']}"
                 print(data_message)
-                #print_terminal.put(data_message)
+                print_message_queue.put(data_message)
     elif flow != '':
         Virtual_position_open_price = float(History_KLine.loc[Virtual_timer,'Close'])
         Virtual_position = 0.0
@@ -654,7 +657,7 @@ def Virtual_position_display(trade_num:float=0.0, money:float=0.0,flow:str='') -
             ;保證金={History_KLine_Export.loc[Virtual_timer,'Trade_Margin']}\
             獲利={History_KLine_Export.loc[Virtual_timer,'Trade_Profit']}"
         print(data_message)
-        #print_terminal.put(data_message)        
+        print_message_queue.put(data_message)        
         
         
 
@@ -707,6 +710,9 @@ def main_function(progress_bar_or_message:Queue)-> None:
     global Start_time_str
     global End_time_str
     global Force_stop_flag
+    global print_message_queue
+    
+    print_message_queue = progress_bar_or_message
         #=========================================================================================================================
     #啟動回測模擬
     if Virtual_flag:
@@ -845,8 +851,7 @@ def main_function(progress_bar_or_message:Queue)-> None:
                         open_price = get_order(SYMBOL, order_id)
                         trade_flag = True
                         open_fee = open_price / 20 *trade_num * 0.0004
-                        data_message = f"開單日期{open_time}, 開單價格{open_price}, \
-                            開單數量{trade_num}, 開單手續費{open_fee}"
+                        data_message = f"開單日期{open_time}, 開單價格{open_price},開單方向{open_time_direction},開單數量{trade_num}, 開單手續費{open_fee}"
                         
                         #print('開單日期{}, 開單價格{}, 開單數量{}, 開單手續費{}'.format(
                         #    open_time, open_price, trade_num, open_fee))
@@ -860,7 +865,7 @@ def main_function(progress_bar_or_message:Queue)-> None:
                         data_message = data_message + "\n" + "訂單失敗,跳過此次開單"
                         #print("訂單失敗,跳過此次開單")
                         print(data_message)
-                        #print_terminal.put(data_message)
+                        progress_bar_or_message.put(data_message)
                 old_time = new_time
                 if not Virtual_flag:
                     for i in range(59):
